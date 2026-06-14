@@ -19,6 +19,8 @@ from fastapi.responses import StreamingResponse
 from chatbot import stream_chat,generate_title,chat
 import json
 from sqlalchemy import delete
+from fastapi import UploadFile,File,Response
+from transcribe import transcribe_audio
 
 
 @asynccontextmanager
@@ -189,3 +191,19 @@ async def chat_stream_route(data: MessageSend, db: AsyncSession = Depends(get_db
 
     return StreamingResponse(generate(),media_type="text/event-stream",background=background_tasks)
 
+
+@app.post("/transcribe")
+async def transcribe_endpoint(audio: UploadFile = File(...)):
+    audio_bytes = await audio.read()
+    text = await transcribe_audio(audio_bytes,audio.filename)
+    return {"text": text}
+
+
+from speak import text_to_speach
+
+class SpeakRequest(BaseModel):
+    text: str
+
+@app.post("/speak")
+async def speak(request: SpeakRequest):
+    return await text_to_speach(request.text)

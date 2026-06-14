@@ -1147,6 +1147,45 @@
             color: white;
             border-color: var(--accent);
         }
+        .mic-btn {
+            width: 34px;
+            height: 34px;
+            background: transparent;
+            border: 1px solid var(--border);
+            border-radius: 9px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            transition: all 0.2s;
+            color: var(--text-muted);
+            font-size: 16px;
+        }
+
+        .mic-btn.recording {
+            background: var(--red);
+            border-color: var(--red);
+            color: white;
+            animation: pulse 1.5s infinite;
+        }
+
+        .speak-btn {
+            background: transparent;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            cursor: pointer;
+            padding: 4px 8px;
+            color: var(--text-muted);
+            font-size: 14px;
+            margin-top: 6px;
+            transition: all 0.2s;
+        }
+
+        .speak-btn:hover {
+            background: var(--surface2);
+            color: var(--accent);
+        }
     </style>
 </head>
 <body>
@@ -1203,6 +1242,9 @@
                     <textarea id="messageInput" placeholder="Message KAI..." rows="1"
                     oninput="autoResize(this); toggleSend()"
                 onkeydown="handleKey(event)"></textarea>
+                <button class="mic-btn" id="micBtn" onclick="toggleRecording()" title="Voice input">
+    🎤
+</button>
                 <button id="sendBtn" onclick="sendMessage()">
                     <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                         <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
@@ -1261,6 +1303,96 @@
     let currentMode = 'chat';
     let sidebarCollapsed = false;
     let conversationToDelete = null;
+    let mediaRecorder = null;
+    let audioChunks = [];
+    let isRecording = false;
+
+    async function toggleRecording() {
+        if (isRecording) {
+            await stopRecording();
+        } else {
+            await startRecording();
+        }
+    }
+
+    async function startRecording() {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRecorder = new MediaRecorder(stream);
+            audioChunks = [];
+            
+            mediaRecorder.ondataavailable = (e) => {
+                audioChunks.push(e.data);
+            };
+            
+            mediaRecorder.onstop = async () => {
+                const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                await sendAudioToBackend(audioBlob);
+                stream.getTracks().forEach(track => track.stop());
+            };
+            
+            mediaRecorder.start();
+            isRecording = true;
+            document.getElementById('micBtn').classList.add('recording');
+            document.getElementById('micBtn').innerHTML = '🔴';
+        } catch (err) {
+            alert('Microphone access denied. Please allow microphone access.');
+        }
+    }
+
+    async function stopRecording() {
+        if (mediaRecorder) {
+            mediaRecorder.stop();
+            isRecording = false;
+            document.getElementById('micBtn').classList.remove('recording');
+            document.getElementById('micBtn').innerHTML = '🎤';
+        }
+    }
+
+    async function sendAudioToBackend(audioBlob) {
+        const formData = new FormData();
+        formData.append('audio', audioBlob, 'recording.webm');
+        
+        console.log("Sending audio, size:", audioBlob.size);
+        
+        try {
+            const res = await fetch(`${API}/transcribe`, {
+                method: 'POST',
+                body: formData
+            });
+            
+            console.log("Response status:", res.status);
+            
+            if (!res.ok) {
+                const errorText = await res.text();
+                console.error("Transcription error:", errorText);
+                alert('Transcription failed: ' + errorText);
+                return;
+            }
+            
+            const data = await res.json();
+            console.log("Transcription result:", data);
+
+            const transcribedText = data.text.text;  // ← fixed
+
+            if (!transcribedText || transcribedText.trim() === '') {
+                alert('No text detected. Please try again.');
+                return;
+            }
+            
+            document.getElementById('messageInput').value = transcribedText;
+            toggleSend();
+            autoResize(document.getElementById('messageInput'));
+            
+            if (transcribedText.trim()) {
+                sendMessage();
+            }
+
+        } catch (err) {
+            console.error('Network error:', err);
+            alert('Failed to connect to server.');
+        }
+    }
 
     // ── Sidebar Toggle ──────────────────────────────────
     function toggleSidebar() {
@@ -1560,6 +1692,8 @@
                 if (streamDone) break;
             }
             msgEl.innerHTML = marked.parse(fullText);
+            addSpeakButton(msgRow);
+            speakText(fullText);
             msgEl.style.display = 'none';
             msgEl.offsetHeight;
             msgEl.style.display = '';
@@ -1590,6 +1724,7 @@
             </div>
         `;
         area.appendChild(row);
+        if (!isUser) addSpeakButton(row);
         scrollToBottom();
     }
 
@@ -1671,6 +1806,64 @@
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             sendMessage();
+        }
+    }
+
+    // function speakText(text) {
+    //     if ('speechSynthesis' in window) {
+    //         window.speechSynthesis.cancel();
+    //         const utterance = new SpeechSynthesisUtterance(text);
+    //         utterance.lang = 'hi-IN'
+    //         utterance.rate = 1;
+    //         utterance.pitch = 1;
+    //         window.speechSynthesis.speak(utterance);
+    //     }
+    // }
+
+    function addSpeakButton(row) {
+        const msgText = row.querySelector('.message-text');
+        const text = msgText.textContent;
+        
+        const speakBtn = document.createElement('button');
+        speakBtn.className = 'speak-btn';
+        speakBtn.innerHTML = '🔊';
+        speakBtn.title = 'Listen';
+        speakBtn.onclick = () => speakText(text);
+        
+        row.querySelector('.message-content').appendChild(speakBtn);
+    }
+
+    async function speakText(text) {
+        try {
+            const res = await fetch(`${API}/speak`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: text })
+            });
+            
+            const audioBlob = await res.blob();
+            
+            // Check if blob is valid
+            if (audioBlob.size < 100) {
+                console.error("Audio too small, something wrong");
+                return;
+            }
+            
+            const audioUrl = URL.createObjectURL(audioBlob);
+            const audio = new Audio(audioUrl);
+            
+            // Must be triggered by user click - already is since speakText is called from onclick
+            audio.load();
+            await audio.play();
+            
+        } catch (err) {
+            console.error('Failed to speak:', err);
+            // Fallback to browser TTS
+            if ('speechSynthesis' in window) {
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.lang = 'hi-IN';
+                window.speechSynthesis.speak(utterance);
+            }
         }
     }
 
