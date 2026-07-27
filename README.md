@@ -32,6 +32,10 @@ https://github.com/user-attachments/assets/c1186d90-9e7a-4a83-bde3-66bb38d57b12
 * Allows users to continue previous discussions.
 * Improves long-term conversational context.
 
+### Voice integration
+* Read responses 
+* Your can interact with voice chating
+
 ### 🌐 Web Search Integration
 
 * Retrieves up-to-date information from the internet.
