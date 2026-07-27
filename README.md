@@ -36,6 +36,7 @@ https://github.com/user-attachments/assets/c1186d90-9e7a-4a83-bde3-66bb38d57b12
 * Read responses 
 * Your can interact with voice chating
 
+
 ### 🌐 Web Search Integration
 
 * Retrieves up-to-date information from the internet.
