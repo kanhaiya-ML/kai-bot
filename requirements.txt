@@ -7,3 +7,5 @@ python-dotenv
 pydantic
 typing
 tavily
+duckduckgo_search
+python-multipart
